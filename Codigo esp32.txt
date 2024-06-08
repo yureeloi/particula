@@ -1,0 +1,124 @@
+#include <WiFiManager.h>
+#include <IOXhop_FirebaseESP32.h>
+#include <ArduinoJson.h>
+#include <TimeLib.h>
+ 
+#define FIREBASE_HOST "https://teste-708c6-default-rtdb.firebaseio.com/"
+#define FIREBASE_AUTH "fTbrSgWjzP8CRNRhZI5qeIaBUwfXgFNtdhA8ewAr"
+ 
+// Declarando e inicializando a variável id
+int id = 1; // Inicialização de exemplo
+ 
+void setup() {
+    Serial.begin(115200);
+   
+    // Tenta conectar com as credenciais WiFi salvas
+    WiFi.begin();
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 5) {
+        delay(5000); // Espera 5 segundos
+        attempts++;
+    }
+ 
+    if (WiFi.status() != WL_CONNECTED) {
+        // WiFiManager
+        WiFiManager wm;
+        bool res = wm.autoConnect("ESP32-IOTMizando", "iotmizando");
+ 
+        if (!res) {
+            Serial.println("Falha na conexão");
+            // Reiniciar o processo de configuração do ponto de acesso
+            res = wm.startConfigPortal("ESP32-IOTMizando", "iotmizando");
+            if (!res) {
+                Serial.println("Falha ao iniciar o portal de configuração. Reiniciando...");
+                delay(3000);
+                ESP.restart();
+            }
+        } else {
+            Serial.println("Conectado ao WiFi!");
+            Serial.print("Endereço IP: ");
+            Serial.println(WiFi.localIP());
+ 
+            // Firebase
+            Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+           
+            if (Firebase.failed()) {
+                Serial.print("Falha ao conectar ao Firebase. Código de erro: ");
+                Serial.println(Firebase.error());
+            } else {
+                Serial.println("Conexão ao Firebase bem-sucedida...");
+                Serial.println();
+            }
+        }
+    } else {
+        Serial.println("Conectado ao WiFi!");
+        Serial.print("Endereço IP: ");
+        Serial.println(WiFi.localIP());
+ 
+        // Firebase
+        Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+       
+        if (Firebase.failed()) {
+            Serial.print("Falha ao conectar ao Firebase. Código de erro: ");
+            Serial.println(Firebase.error());
+        } else {
+            Serial.println("Conexão ao Firebase bem-sucedida...");
+            Serial.println();
+        }
+    }
+ 
+    // Configura a sincronização NTP para o fuso horário de Brasília (BRT, UTC-3)
+    // Horário de verão não é mais observado no Brasil, portanto, o DST é 0.
+    configTime(-3 * 3600, 0, "a.ntp.br", "b.ntp.br");
+ 
+    // Espera a sincronização do tempo
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+        Serial.println("Falha ao obter a hora");
+        return;
+    }
+ 
+    Serial.println("--------------------------- INFORMAÇÕES ATUAIS ------------------------");
+    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+    Serial.println();
+}
+ 
+void loop() {
+    float current = random(10, 50) / 10.0; // Gera um valor aleatório entre 1.0 e 5.0
+ 
+    // Obtém o horário atual
+    time_t now = time(nullptr);
+    struct tm *timeinfo;
+    if(!(timeinfo = localtime(&now))) {
+        Serial.println("Falha ao obter a hora");
+        return;
+    }
+ 
+    // Formata o horário atual
+    char timeString[30];
+    strftime(timeString, sizeof(timeString), "%d/%m/%Y %H:%M:%S", timeinfo);
+ 
+    // Cria o objeto JSON com as informações
+    StaticJsonBuffer<256> jsonBuffer; // Tamanho fixo de 256 bytes
+    JsonObject& jsonDoc = jsonBuffer.createObject();
+    jsonDoc["Nome"] = "Giovane William Gomes";
+    jsonDoc["Corrente"] = current;
+    jsonDoc["Data"] = timeString; // Usa a string formatada
+    jsonDoc["ID"] = id;
+ 
+    // Serializa o JSON para uma string
+    String data;
+    jsonDoc.printTo(data);
+ 
+    // Envia os dados para o Firebase
+    if (Firebase.pushString("/data", data)) {
+        Serial.println("Dados enviados com sucesso");
+        id++; // Incrementa o ID para garantir unicidade
+    } else {
+        Serial.print("Falha ao enviar dados. Código de erro: ");
+        Serial.println(Firebase.error());
+    }
+ 
+    delay(15000); // Espera 15 segundos antes de enviar novamente
+}
+ 
